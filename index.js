@@ -1,69 +1,119 @@
-const { Client } = require("pg");
+const { Pool } = require("pg");
 const chalk = require("chalk");
 
-const client = new Client({
+const pool = new Pool({
   user: "postgres",
-  host: "localhost",
+  host: "127.0.0.1",
   database: "always_music",
   password: "",
-  port: 5432,
-});
-
-client.connect((err) => {
-  if (err) {
-    console.log(chalk.red("Error en la conexión a postgres", error));
-  }
+  max: 20,
+  min: 2,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
 async function nuevoEstudiante(nombre, rut, curso, nivel) {
-  const res = await client.query(
-    `insert into estudiante (nombre, rut, curso, nivel)
-    values
-    ('${nombre}', '${rut}', '${curso}', '${nivel}');  `
-  );
-  console.log(chalk.green("Estudiante " + nombre + " agregado con éxito"));
-  client.end();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (conn_error) {
+    console.log(conn_error);
+    return;
+  }
+  let res;
+  try {
+    res = await client.query({
+      name: "nuevo-estudiante",
+      text: `insert into estudiante (nombre, rut, curso, nivel) values($1, $2, $3, $4)`,
+      values: [nombre, rut, curso, nivel],
+    });
+    console.log(chalk.green("Estudiante " + nombre + " agregado con éxito"));
+    client.release();
+    pool.end();
+  } catch (error) {
+    console.log(error);
+    return;
+  }
 }
 
 async function buscaEstudiante(rut) {
-  const res = await client.query(
-    `select * from estudiante 
-     where rut='${rut}'`
-  );
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (err) {
+    console.log(err);
+    return;
+  }
+  const res = await client.query({
+    name: "buscar-estudiante",
+    text: `select * from estudiante where rut=$1`,
+    values: [rut],
+  });
   if (res.rows.length == 0) {
     console.log(chalk.red("No se encontró alumno con el rut ingresado"));
   } else {
     console.log(chalk.green("Resultado"));
     console.log(res.rows);
   }
-  client.end();
+  client.release();
+  pool.end();
 }
 
 async function todos() {
-  const res = await client.query(`select * from estudiante`);
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (conn_error) {
+    console.log(conn_error);
+    return;
+  }
+  const res = await client.query({
+    name: "todos-estudiantes",
+    text: `select * from estudiante`,
+    rowMode: "array",
+  });
   console.log(chalk.blue("Resultado"));
   console.log(res.rows);
-  client.end();
+  client.release();
+  pool.end();
 }
 
 async function editarEstudiante(nombre, rut, curso, nivel) {
-  const query = `update estudiante 
-    set nombre='${nombre}', curso='${curso}', nivel='${nivel}'
-    where rut='${rut}' returning *`;
-  const res = await client.query(query);
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (conn_error) {
+    console.log(conn_error);
+    return;
+  }
+  const res = await client.query({
+    name: "editar-estudiante",
+    text: `update estudiante set nombre=$1, curso=$2, nivel=$3 where rut=$4 returning *`,
+    values: [nombre, rut, curso, nivel],
+  });
   if (res.rows.length == 0) {
     console.log(chalk.red("No se encontró alumno con el rut ingresado"));
   } else {
     console.log(chalk.green("Estudiante " + nombre + " editado con éxito"));
   }
-  client.end();
+  client.release();
+  pool.end();
 }
 
 async function eliminarEstudiante(rut) {
-  const res = await client.query(
-    `delete from estudiante 
-    where rut = '${rut}' returning *`
-  );
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (conn_error) {
+    console.log(conn_error);
+    return;
+  }
+  const res = await client.query({
+    name: "eliminar-estudiante",
+    text: `delete from estudiante 
+      where rut = '$1' returning *`,
+    values: [rut],
+  });
   if (res.rows.length == 0) {
     console.log(chalk.red("No se encontró alumno con el rut ingresado"));
   } else {
@@ -71,7 +121,8 @@ async function eliminarEstudiante(rut) {
       chalk.green("Registro de estudiante con rut " + rut + " eliminado")
     );
   }
-  client.end();
+  client.release();
+  pool.end();
 }
 
 const argumentos = process.argv.slice(2);
